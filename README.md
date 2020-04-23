@@ -1,4 +1,4 @@
-#
+# Notes
 ***Investiage thread, task, and interrupt management in heterogenous multiprocessors*** Such machines, such as ARM big/little have diverse kinds of CPUs with variong performance and energy profiles. Currently Nautilus assumes a NUMA machine with identical CPUs. Study this. We can imagine adding DVFS control to emulate a heterogenous multiprocessor, or use a simulator to do so
 
 
@@ -8,6 +8,8 @@ Google Doc to Project Proposal -> https://docs.google.com/document/d/1ACO4cTSYhd
 
 
 
+
+# Nautilus
 ![Nautilus Logo](http://cs.iit.edu/~khale/nautilus/img/nautilus_logo.png "Nautilus Logo")
 [![Build Status](https://travis-ci.com/HExSA-Lab/nautilus.svg?branch=master)](https://travis-ci.com/HExSA-Lab/nautilus)
 [![Coverity Scan Build Status](https://scan.coverity.com/projects/17390/badge.svg)](https://scan.coverity.com/projects/hexsa-lab-nautilus)
@@ -15,7 +17,6 @@ Google Doc to Project Proposal -> https://docs.google.com/document/d/1ACO4cTSYhd
 [![Total alerts](https://img.shields.io/lgtm/alerts/g/HExSA-Lab/nautilus.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/HExSA-Lab/nautilus/alerts/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-# Nautilus
 Nautilus is an example of an Aerokernel, a very thin kernel-layer exposed 
 (much like Unikernel) directly to a runtime system and/or application. 
 Aerokernels are suited particularly well for *parallel* runtimes that need fine-grained,
