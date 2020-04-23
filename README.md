@@ -1,3 +1,12 @@
+#
+***Investiage thread, task, and interrupt management in heterogenous multiprocessors*** Such machines, such as ARM big/little have diverse kinds of CPUs with variong performance and energy profiles. Currently Nautilus assumes a NUMA machine with identical CPUs. Study this. We can imagine adding DVFS control to emulate a heterogenous multiprocessor, or use a simulator to do so
+
+
+[Thread in Piazza with more info:](https://piazza.com/class/k7zb9zlseae5yp?cid=48)
+
+
+
+
 ![Nautilus Logo](http://cs.iit.edu/~khale/nautilus/img/nautilus_logo.png "Nautilus Logo")
 [![Build Status](https://travis-ci.com/HExSA-Lab/nautilus.svg?branch=master)](https://travis-ci.com/HExSA-Lab/nautilus)
 [![Coverity Scan Build Status](https://scan.coverity.com/projects/17390/badge.svg)](https://scan.coverity.com/projects/hexsa-lab-nautilus)
