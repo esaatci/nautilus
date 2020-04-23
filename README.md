@@ -4,6 +4,7 @@
 
 [Thread in Piazza with more info:](https://piazza.com/class/k7zb9zlseae5yp?cid=48)
 
+Google Doc to Project Proposal -> https://docs.google.com/document/d/1ACO4cTSYhdmZFQPLWdL_0TYduMeq8zem57IAcDxzeRk/edit?usp=sharing
 
 
 
