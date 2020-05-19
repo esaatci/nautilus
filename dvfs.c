@@ -1,4 +1,4 @@
-#include dvsf.h
+#include "dvsf.h"
 
 
 
@@ -42,7 +42,7 @@ struct cpu {
 
 
 
-}
+};
 
 struct cpu my_cpu;
 #define IA32_PM_ENABLE_MSR 0x00000770 
@@ -70,6 +70,9 @@ struct ia32_perf_ctl {
 
 	}__attribute__(__packed__);
 }__attribute__(__packed__);
+
+#define MSR_MPERF_IA32         0x000000e7
+#define MSR_APERF_IA32         0x000000e8
 
 
 int set_pstate(int pstate) {
