@@ -1,21 +1,40 @@
+#include <nautilus/nautilus.h>
 #include "dvsf.h"
 
 
-
-
 static int is_intel (void);
-
 static int get_cpu_vendor (char name[13]);
 
+// Core information
 struct pstate_data {
-          int     current_pstate;
-          int     min_pstate;
-          int     max_pstate;
-          int     max_pstate_physical;
-          int     scaling;
-          int     turbo_pstate;
+          uint64_t     current_pstate;
+          uint64_t      min_pstate;
+          uint64_t      max_pstate;				// Curret - sw?
+          uint64_t      max_pstate_physical;  /// HW imposed max?
+
+		  // Added freq info in KHz
+		  uint64_t		current_freq_khz;
+		  uint64_t		min_freq_khz;
+		  uint64_t		max_freq_khz;
+
+		// ?
+          uint64_t      scaling;
+
+		  // turbo boost related
+          uint64_t     turbo_pstate;
           unsigned int max_freq;
           unsigned int turbo_freq;
+
+		// Copied from palacios . turbo stuff
+		uint8_t prior_speedstep;
+		uint8_t turbo_disabled;
+		uint8_t no_turbo;
+
+		// Copied from linux cpu freq policy struct // line 68, cpufreq.h
+		unsigned int		restore_freq; /* = policy->cur before transition */
+		unsigned int		suspend_freq;
+		struct cpufreq_frequency_table	*freq_table; // already filled (hard!!!) prediction? (like bp)
+		unsigned int		transition_delay_us; // ? nice to have. Maybe do it. CPUID?? 
   };
 
 struct vid_data {
