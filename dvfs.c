@@ -1,10 +1,14 @@
 #include <nautilus/nautilus.h>
 #include <nautilus/msr.h>
+#include <nautilus/shell.h>
 #include "dvsf.h"
 
+#define MSR_MPERF_IA32         0x000000e7
+#define MSR_APERF_IA32         0x000000e8
 
 static int is_intel (void);
 static int get_cpu_vendor (char name[13]);
+static int set_pstate(int pstate); 
 
 // Core information
 static struct pstate_data {
@@ -90,8 +94,6 @@ struct ia32_perf_ctl {
 	}__attribute__(__packed__);
 }__attribute__(__packed__);
 
-#define MSR_MPERF_IA32         0x000000e7
-#define MSR_APERF_IA32         0x000000e8
 
 /// Added
 #define MSR_PERF_STAT_IA32     0x00000198
@@ -107,20 +109,30 @@ struct perf_stat_reg_intel {
 } __attribute__((packed));
 
 
-int set_pstate(int pstate) {
+int set_pstate(uint16_t pstate) {
 	
 	struct ia32_perf_ctl val;	
-
+	/*
 	if (my_cpu.pstate.current_pstate == pstate)
 		return 0;
 	if(pstate < my_cpu.min_pstate) 
 		return 1;
 	if(pstate > my_cpu.max_pstate) 
 		return 1;
-
+	*/
 	val = read_msr(IA32_PERF_CTL);
+	val.reg.pstate = pstate;
+	pstate_data.current_pstate = pstate;
+	msr_write(IA32_PERF_CTL, val);
+	return 0;
 	
 	
+}
+static int handle_set_pstate(char *buf, void *priv) {
+	uint16_t state;	
+	if(sscanf(buf, "set_pstate %d", &state) == 1) {
+		return set_pstate(state);
+	}
 }
 
 // Get Pstate
