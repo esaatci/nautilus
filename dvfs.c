@@ -1,4 +1,5 @@
 #include <nautilus/nautilus.h>
+#include <nautilus/msr.h>
 #include "dvsf.h"
 
 
@@ -6,7 +7,7 @@ static int is_intel (void);
 static int get_cpu_vendor (char name[13]);
 
 // Core information
-struct pstate_data {
+static struct pstate_data {
           uint64_t     current_pstate;
           uint64_t      min_pstate;
           uint64_t      max_pstate;				// Curret - sw?
@@ -76,7 +77,6 @@ struct ia32_pm_enable_msr {
 }__attribute__(__packed__);
 
 #define IA32_PERF_CTL 0x00000199
-
 struct ia32_perf_ctl {
 	union {
 		uint64_t val;
@@ -93,6 +93,19 @@ struct ia32_perf_ctl {
 #define MSR_MPERF_IA32         0x000000e7
 #define MSR_APERF_IA32         0x000000e8
 
+/// Added
+#define MSR_PERF_STAT_IA32     0x00000198
+struct perf_stat_reg_intel {
+    union {
+        uint64_t val;
+        struct {
+            // this is the current
+            uint16_t pstate                 : 16;
+            uint64_t reserved               : 48;
+        } reg;
+    } __attribute__((packed));
+} __attribute__((packed));
+
 
 int set_pstate(int pstate) {
 	
@@ -108,6 +121,21 @@ int set_pstate(int pstate) {
 	val = read_msr(IA32_PERF_CTL);
 	
 	
+}
+
+// Get Pstate
+static uint64_t get_pstate_intel(void)
+{
+	struct perf_stat_reg_intel perf;
+    perf.val = msr_read(MSR_PERF_STAT_IA32);
+
+    //INFO("P-State: Get: 0x%llx\n", val);
+
+    // should check if turbo is active, in which case 
+    // this value is not the whole story
+	// Maybe deal with it at the end
+
+    return perf.reg.pstate;
 }
 
 int dvfs_init(void) {
