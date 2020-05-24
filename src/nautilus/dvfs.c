@@ -107,7 +107,7 @@ struct perf_stat_reg_intel {
 
 
 static int set_pstate(uint16_t pstate) {
-	
+
 	struct ia32_perf_ctl val;	
 	/*
 	if (my_cpu.pstate.current_pstate == pstate)
