@@ -1,14 +1,15 @@
 #include <nautilus/nautilus.h>
 #include <nautilus/msr.h>
 #include <nautilus/shell.h>
-#include "dvsf.h"
+#include <nautilus/dvfs.h>
 
 #define MSR_MPERF_IA32         0x000000e7
 #define MSR_APERF_IA32         0x000000e8
 
 static int is_intel (void);
 static int get_cpu_vendor (char name[13]);
-static int set_pstate(int pstate); 
+static int set_pstate(uint16_t pstate); 
+static uint64_t get_pstate_intel(void);
 
 // Core information
 static struct pstate_data {
@@ -40,16 +41,16 @@ static struct pstate_data {
 		unsigned int		suspend_freq;
 		struct cpufreq_frequency_table	*freq_table; // already filled (hard!!!) prediction? (like bp)
 		unsigned int		transition_delay_us; // ? nice to have. Maybe do it. CPUID?? 
-  };
+  } pstate_data;
 
 struct vid_data {
           int min;
           int max;
           int turbo;
-          int32_t ratio;
+          uint32_t ratio;
 };
 
-
+/*
 struct cpu {
 
 	cpu_id_t id;
@@ -57,18 +58,14 @@ struct cpu {
 	struct pstate_data pstate;
 		
 	// what functionality it has 
-
 	// max freq
-	
 	// min freq
-	
 	// cur_freq
-
-
-
 };
 
 struct cpu my_cpu;
+*/
+
 #define IA32_PM_ENABLE_MSR 0x00000770 
 struct ia32_pm_enable_msr {
 	union {
@@ -77,8 +74,8 @@ struct ia32_pm_enable_msr {
 			uint64_t rsvd: 63;
 			uint8_t  hwp_enable: 1;
 		}reg;
-	}__attribute__(__packed__);
-}__attribute__(__packed__);
+	}__attribute__((packed));
+}__attribute__((packed));
 
 #define IA32_PERF_CTL 0x00000199
 struct ia32_perf_ctl {
@@ -91,8 +88,8 @@ struct ia32_perf_ctl {
 			uint32_t rvsd2  : 31;	
 		}reg;
 
-	}__attribute__(__packed__);
-}__attribute__(__packed__);
+	}__attribute__((packed));
+}__attribute__((packed));
 
 
 /// Added
@@ -109,7 +106,7 @@ struct perf_stat_reg_intel {
 } __attribute__((packed));
 
 
-int set_pstate(uint16_t pstate) {
+static int set_pstate(uint16_t pstate) {
 	
 	struct ia32_perf_ctl val;	
 	/*
@@ -120,10 +117,10 @@ int set_pstate(uint16_t pstate) {
 	if(pstate > my_cpu.max_pstate) 
 		return 1;
 	*/
-	val = read_msr(IA32_PERF_CTL);
+	val.val = read_msr(IA32_PERF_CTL);
 	val.reg.pstate = pstate;
 	pstate_data.current_pstate = pstate;
-	msr_write(IA32_PERF_CTL, val);
+	msr_write(IA32_PERF_CTL, val.val);
 	return 0;
 	
 	
@@ -147,28 +144,29 @@ static uint64_t get_pstate_intel(void)
     // this value is not the whole story
 	// Maybe deal with it at the end
 
-    return perf.reg.pstate;
+    return (uint64_t)perf.reg.pstate;
 }
 
-int dvfs_init(void) {
-	/* declarations */
+/*
+uint64_t dvfs_init(void) {
+	// declarations 
 	cpuid_ret_t regs;
 	int supports_speedstep, supports_hw_cord, supports_hwp; 
 	struct ia32_pm_enable_msr val;
 	
-	/* get cpu characteristics */
+	//get cpu characteristics 
 	if(is_intel()) 
 		my_cpu.arch = INTEL;
 		
 	else
 		return 1;
 
-	/* check for intel speedstep */
+	// check for intel speedstep 
 	if(cpuid(0x1, &regs) != 0)
 		return 1;	
 	supports_speedstep = !!(regs.c & (1 << 7));
 
-	/* check for hardware cordination */	
+	// check for hardware cordination 	
 	if(cpuid(0x6, &regs) != 0)
 		return 1; 
 
@@ -178,25 +176,26 @@ int dvfs_init(void) {
 	supports_act_wind_cont = !!(regs.a & (1 << 9));  
 	supports_pref_cont = !!(regs.a & (1 << 10));  
 	supports_pack_cont = !!(regs.a & (1 << 11));  
-	/* disable hwp */	
+	// disable hwp 	
 	if(supports_hwp) {
 		val = msr_read(IA32_PM_ENABLE_MSR);
 		val.reg.hwp_enable = 0;
 		msr_write(IA32_PM_ENABLE_MSR, val);
 	}
-	/*disable turbo */	
+	//disable turbo 	
 	set_turbo(0);	
 
 }
+*/
 
 static inline void set_turbo(int enable) 
 {
 	struct ia32_perf_ctl val;
 	uint8_t en_bit;
 	en_bit = !!(enable);
-	val = read_msr(IA32_PERF_CTL);
-	val = val.reg.turbo = en_bit;
-	msr_write(IA32_PERF_CTL, val);
+	val.val = read_msr(IA32_PERF_CTL);
+	val.reg.turbo = en_bit;
+	msr_write(IA32_PERF_CTL, val.val);
 		
 } 
 
@@ -229,3 +228,17 @@ static int get_cpu_vendor (char name[13])
 
     return maxid;
 }
+
+static int handle_get_pstate(char * buf, void * priv)
+{
+	uint64_t val = get_pstate_intel();
+	nk_vc_printf("0x%016x\n",val);
+	return 0;
+}
+
+static struct shell_cmd_impl get_pstate_impl = {
+    .cmd      = "get_pstate",
+    .help_str = "Gets the pstate!",
+    .handler  = handle_get_pstate
+};
+nk_register_shell_cmd(get_pstate_impl);
