@@ -6,7 +6,7 @@
 ** Use VBoxManage or the VirtualBox Manager GUI to make changes.
 -->
 <VirtualBox xmlns="http://www.virtualbox.org/" version="1.15-linux">
-  <Machine uuid="{e33c3d08-6aee-4e9b-bc19-05ba4ae8aab1}" name="nk" OSType="Other_64" snapshotFolder="Snapshots" lastStateChange="2020-05-19T01:59:38Z">
+  <Machine uuid="{e33c3d08-6aee-4e9b-bc19-05ba4ae8aab1}" name="nk" OSType="Other_64" snapshotFolder="Snapshots" lastStateChange="2020-05-24T22:08:50Z">
     <MediaRegistry>
       <HardDisks>
         <HardDisk uuid="{1c8bcd54-bca3-4ee9-8212-02a1e16a2ddc}" location="nk.vdi" format="VDI" type="Normal"/>
@@ -17,7 +17,7 @@
     </MediaRegistry>
     <ExtraData>
       <ExtraDataItem name="GUI/LastCloseAction" value="PowerOff"/>
-      <ExtraDataItem name="GUI/LastNormalWindowPosition" value="134,210,720,468"/>
+      <ExtraDataItem name="GUI/LastNormalWindowPosition" value="646,128,720,468"/>
     </ExtraData>
     <Hardware>
       <CPU>
@@ -47,7 +47,7 @@
       <AudioAdapter driver="Pulse" enabled="true" enabledIn="false"/>
       <Clipboard/>
       <GuestProperties>
-        <GuestProperty name="/VirtualBox/HostInfo/GUI/LanguageID" value="en_US" timestamp="1589853579207649000" flags=""/>
+        <GuestProperty name="/VirtualBox/HostInfo/GUI/LanguageID" value="en_US" timestamp="1590358130850841000" flags=""/>
       </GuestProperties>
     </Hardware>
     <StorageControllers>

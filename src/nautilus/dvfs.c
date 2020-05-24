@@ -117,19 +117,13 @@ static int set_pstate(uint16_t pstate) {
 	if(pstate > my_cpu.max_pstate) 
 		return 1;
 	*/
-	val.val = read_msr(IA32_PERF_CTL);
+	val.val = msr_read(IA32_PERF_CTL);
 	val.reg.pstate = pstate;
 	pstate_data.current_pstate = pstate;
 	msr_write(IA32_PERF_CTL, val.val);
 	return 0;
 	
 	
-}
-static int handle_set_pstate(char *buf, void *priv) {
-	uint16_t state;	
-	if(sscanf(buf, "set_pstate %d", &state) == 1) {
-		return set_pstate(state);
-	}
 }
 
 // Get Pstate
@@ -236,9 +230,25 @@ static int handle_get_pstate(char * buf, void * priv)
 	return 0;
 }
 
+static int handle_set_pstate(char *buf, void *priv) {
+	uint16_t state;	
+	if(sscanf(buf, "set_pstate %d", &state) == 1) {
+		int x = set_pstate(state);
+	}
+	return 0;
+}
+
 static struct shell_cmd_impl get_pstate_impl = {
     .cmd      = "get_pstate",
     .help_str = "Gets the pstate!",
     .handler  = handle_get_pstate
 };
+
+static struct shell_cmd_impl set_pstate_impl = {
+    .cmd      = "set_pstate",
+    .help_str = "Sets the pstate!",
+    .handler  = handle_set_pstate
+};
+
 nk_register_shell_cmd(get_pstate_impl);
+nk_register_shell_cmd(set_pstate_impl);
