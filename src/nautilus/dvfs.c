@@ -2,14 +2,29 @@
 #include <nautilus/msr.h>
 #include <nautilus/shell.h>
 #include <nautilus/dvfs.h>
+#include <nautilus/cpuid.h>
 
 #define MSR_MPERF_IA32         0x000000e7
 #define MSR_APERF_IA32         0x000000e8
+#define MSR_MISC_ENABLE_IA32   0x000001a0
+
+#define INFO(fmt, args...) INFO_PRINT("DVFS: " fmt, ##args)
+#define ERROR(fmt, args...) ERROR_PRINT("DVFS: " fmt, ##args)
+#define NAUT_CONFIG_DEBUG_DVFS 1
+
+#define DEBUG(fmt, args...)
+#ifdef NAUT_CONFIG_DEBUG_DVFS
+#undef DEBUG
+#define DEBUG(fmt, args...) DEBUG_PRINT("DVFS: " fmt, ##args)
+#endif
 
 static int is_intel (void);
 static int get_cpu_vendor (char name[13]);
 static int set_pstate(uint16_t pstate); 
 static uint64_t get_pstate_intel(void);
+
+
+ 
 
 // Core information
 static struct pstate_data {
@@ -105,6 +120,16 @@ struct perf_stat_reg_intel {
     } __attribute__((packed));
 } __attribute__((packed));
 
+static inline void set_turbo(int enable) 
+{
+	struct ia32_perf_ctl val;
+	uint8_t en_bit;
+	en_bit = !!(enable);
+	val.val = msr_read(IA32_PERF_CTL);
+	val.reg.turbo = en_bit;
+	msr_write(IA32_PERF_CTL, val.val);
+		
+}
 
 static int set_pstate(uint16_t pstate) {
 
@@ -118,8 +143,10 @@ static int set_pstate(uint16_t pstate) {
 		return 1;
 	*/
 	val.val = msr_read(IA32_PERF_CTL);
+	DEBUG("I read %08x\n", val.val);
 	val.reg.pstate = pstate;
 	pstate_data.current_pstate = pstate;
+	DEBUG("I write %08x\n", val.val);
 	msr_write(IA32_PERF_CTL, val.val);
 	return 0;
 	
@@ -132,7 +159,7 @@ static uint64_t get_pstate_intel(void)
 	struct perf_stat_reg_intel perf;
     perf.val = msr_read(MSR_PERF_STAT_IA32);
 
-    //INFO("P-State: Get: 0x%llx\n", val);
+    DEBUG("P-State: Get: %08x\n", perf.val);
 
     // should check if turbo is active, in which case 
     // this value is not the whole story
@@ -141,25 +168,27 @@ static uint64_t get_pstate_intel(void)
     return (uint64_t)perf.reg.pstate;
 }
 
-/*
 uint64_t dvfs_init(void) {
 	// declarations 
 	cpuid_ret_t regs;
-	int supports_speedstep, supports_hw_cord, supports_hwp; 
+	int supports_speedstep, supports_hw_cord, supports_hwp ,supports_act_wind_cont, supports_hwp_not; 
+	int  supports_pref_cont,supports_pack_cont;  
 	struct ia32_pm_enable_msr val;
 	
 	//get cpu characteristics 
-	if(is_intel()) 
-		my_cpu.arch = INTEL;
-		
-	else
-		return 1;
-
+	if(!is_intel()) 
+		{ DEBUG("NOT intel\n");
+		return 1;}
 	// check for intel speedstep 
-	if(cpuid(0x1, &regs) != 0)
-		return 1;	
+	if(cpuid(0x1, &regs) != 0) {
+		DEBUG("CPUID failed\n");
+		return 1;}	
 	supports_speedstep = !!(regs.c & (1 << 7));
-
+	DEBUG("supports p_state: %d and the regs.c : %08x \n", supports_speedstep, regs.c);
+	if(!supports_speedstep) {
+	return -1;
+	}	
+	/*
 	// check for hardware cordination 	
 	if(cpuid(0x6, &regs) != 0)
 		return 1; 
@@ -172,26 +201,42 @@ uint64_t dvfs_init(void) {
 	supports_pack_cont = !!(regs.a & (1 << 11));  
 	// disable hwp 	
 	if(supports_hwp) {
-		val = msr_read(IA32_PM_ENABLE_MSR);
+		val.val = msr_read(IA32_PM_ENABLE_MSR);
 		val.reg.hwp_enable = 0;
-		msr_write(IA32_PM_ENABLE_MSR, val);
+		msr_write(IA32_PM_ENABLE_MSR, val.val);
 	}
 	//disable turbo 	
-	set_turbo(0);	
+	*/
+//	set_turbo(0);	
+
+	// enable speedstep
+	uint64_t temp;
+
+	temp =   msr_read(MSR_MISC_ENABLE_IA32);
+	DEBUG("temp is %08x\n", temp);
+        // enable speedstep (probably already on)
+	temp |= 1 << 16;
+	DEBUG("new temp is %08x\n", temp);
+    	msr_write(MSR_MISC_ENABLE_IA32, temp);	
+	return supports_speedstep;
 
 }
-*/
-
-static inline void set_turbo(int enable) 
+static int handle_dvfs_init(char * buf, void * priv)
 {
-	struct ia32_perf_ctl val;
-	uint8_t en_bit;
-	en_bit = !!(enable);
-	val.val = read_msr(IA32_PERF_CTL);
-	val.reg.turbo = en_bit;
-	msr_write(IA32_PERF_CTL, val.val);
-		
-} 
+	int res = dvfs_init();
+	//set_turbo(1);
+	nk_vc_printf("res is: %d\n",res);
+	return 0;
+}
+
+static struct shell_cmd_impl handle_dvfs_impl = {
+    .cmd      = "dvfs",
+    .help_str = "inits dvfs",
+    .handler  = handle_dvfs_init,
+};
+nk_register_shell_cmd(handle_dvfs_impl);
+
+ 
 
 static inline void cpuid_string (uint32_t id, uint32_t dest[4]) 
 {
@@ -231,10 +276,17 @@ static int handle_get_pstate(char * buf, void * priv)
 }
 
 static int handle_set_pstate(char *buf, void *priv) {
-	uint16_t state;	
+	uint32_t state;	
 	if(sscanf(buf, "set_pstate %d", &state) == 1) {
-		int x = set_pstate(state);
+	
+		if(set_pstate(state)) {
+			nk_vc_printf("can't set pstate\n");
+		}
 	}
+	else {
+	nk_vc_printf("can't parse the command\n");
+	}
+	
 	return 0;
 }
 
