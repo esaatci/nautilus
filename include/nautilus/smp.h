@@ -52,6 +52,9 @@ struct nk_cpu_coords;
 struct nk_queue;
 struct nk_thread;
 
+/* APERF/MPERF Snapshot */
+struct aperfmperf_sample;
+
 //typedef struct nk_wait_queue nk_wait_queue_t;
 //typedef struct nk_thread nk_thread_t;
 typedef void (*nk_xcall_func_t)(void * arg);
@@ -127,6 +130,10 @@ struct cpu {
 
 
     struct nk_rand_info * rand;
+
+    /* APERF/MPERF Snapshot */
+    struct aperfmperf_sample * snapshot;
+
 
     /* temporary */
 #ifdef NAUT_CONFIG_PROFILE
