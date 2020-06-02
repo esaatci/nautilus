@@ -132,7 +132,7 @@ struct cpu {
     struct nk_rand_info * rand;
 
     /* APERF/MPERF Snapshot */
-    struct aperfmperf_sample * snapshot;
+    struct aperfmperf_sample * sample;
 
 
     /* temporary */

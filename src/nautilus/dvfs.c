@@ -186,15 +186,16 @@ irq_enable_restore(flags);
 */
 static void aperfmperf_snapshot_khz(void *dummy)
 {
-	u64 aperf, aperf_delta;
-	u64 mperf, mperf_delta;
-	struct aperfmperf_sample *s = this_cpu_ptr(&samples);
-	unsigned long flags;
+	uint64_t aperf, aperf_delta;
+	uint64_t mperf, mperf_delta;
+	//struct aperfmperf_sample *s = this_cpu_ptr(&samples);
+	struct aperfmperf_sample *s = per_cpu_get(sample);
+	//unsigned long flags;
 
-	local_irq_save(flags);
-	rdmsrl(MSR_IA32_APERF, aperf);
-	rdmsrl(MSR_IA32_MPERF, mperf);
-	local_irq_restore(flags);
+	uint8_t flags = irq_disable_save();
+	aperf = msr_read(MSR_MPERF_IA32);
+	mperf = msr_read(MSR_APERF_IA32);
+	irq_enable_restore(flags);
 
 	aperf_delta = aperf - s->aperf;
 	mperf_delta = mperf - s->mperf;
@@ -204,12 +205,16 @@ static void aperfmperf_snapshot_khz(void *dummy)
 	 * increments faster than we can read it.
 	 */
 	if (mperf_delta == 0)
+	{
 		return;
+	}
 
-	s->time = ktime_get();
+	ulong_t cur_khz = per_cpu_get(cpu_khz);
+
+	s->time = 0; // Need nautilus version
 	s->aperf = aperf;
 	s->mperf = mperf;
-	s->khz = div64_u64((cpu_khz * aperf_delta), mperf_delta);
+	s->khz = (cur_khz * aperf_delta) / mperf_delta;
 }
 
 static inline void cpuid_string (uint32_t id, uint32_t dest[4]) 
