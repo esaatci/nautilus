@@ -189,16 +189,21 @@ static void aperfmperf_snapshot_khz(void *dummy)
 	uint64_t aperf, aperf_delta;
 	uint64_t mperf, mperf_delta;
 	//struct aperfmperf_sample *s = this_cpu_ptr(&samples);
+	nk_vc_printf("I'm getting the per cpu sample\n");
 	struct aperfmperf_sample *s = per_cpu_get(sample);
 	//unsigned long flags;
+	nk_vc_printf("disabling interrupts\n");
 
 	uint8_t flags = irq_disable_save();
 	aperf = msr_read(MSR_MPERF_IA32);
 	mperf = msr_read(MSR_APERF_IA32);
 	irq_enable_restore(flags);
 
+	nk_vc_printf("enabled interrupts\n");
 	aperf_delta = aperf - s->aperf;
 	mperf_delta = mperf - s->mperf;
+	nk_vc_printf("aperf has: %016x\n", aperf);
+	nk_vc_printf("mperf has: %016x\n", mperf);
 
 	/*
 	 * There is no architectural guarantee that MPERF
@@ -209,12 +214,16 @@ static void aperfmperf_snapshot_khz(void *dummy)
 		return;
 	}
 
+	nk_vc_printf("getting cpu_khz\n");
 	ulong_t cur_khz = per_cpu_get(cpu_khz);
 
+	nk_vc_printf("cpu_khz is: %016x\n", cur_khz);
 	s->time = 0; // Need nautilus version
 	s->aperf = aperf;
 	s->mperf = mperf;
 	s->khz = (cur_khz * aperf_delta) / mperf_delta;
+	nk_vc_printf("the runtime khz is: %u\n", s->khz);
+
 }
 
 static inline void cpuid_string (uint32_t id, uint32_t dest[4]) 
@@ -347,6 +356,18 @@ static int handle_dvfs_init(char * buf, void * priv)
 	nk_vc_printf("res is: %d\n",res);
 	return 0;
 }
+// Shell command for snapshot aperfmperf
+static int handle_aperfmpref_snapshot(char * buf, void * priv)
+{
+	nk_vc_printf("calling snapshot \n");
+	aperfmperf_snapshot_khz(NULL);
+	return 0;
+}
+static struct shell_cmd_impl handle_snapshot = {
+    .cmd      = "snapshot",
+    .help_str = "Gets the snapshot of current kHz!",
+    .handler  = handle_aperfmpref_snapshot
+};
 
 static struct shell_cmd_impl get_pstate_impl = {
     .cmd      = "get_pstate",
@@ -368,6 +389,7 @@ static struct shell_cmd_impl handle_dvfs_impl = {
 
 
 
+nk_register_shell_cmd(handle_aperfmpref_snapshot);
 nk_register_shell_cmd(get_pstate_impl);
 nk_register_shell_cmd(set_pstate_impl);
 nk_register_shell_cmd(handle_dvfs_impl);
