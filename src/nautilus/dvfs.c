@@ -363,7 +363,7 @@ static int handle_aperfmpref_snapshot(char * buf, void * priv)
 	aperfmperf_snapshot_khz(NULL);
 	return 0;
 }
-static struct shell_cmd_impl handle_snapshot = {
+static struct shell_cmd_impl handle_snapshot_impl = {
     .cmd      = "snapshot",
     .help_str = "Gets the snapshot of current kHz!",
     .handler  = handle_aperfmpref_snapshot
@@ -389,7 +389,7 @@ static struct shell_cmd_impl handle_dvfs_impl = {
 
 
 
-nk_register_shell_cmd(handle_aperfmpref_snapshot);
+nk_register_shell_cmd(handle_snapshot_impl);
 nk_register_shell_cmd(get_pstate_impl);
 nk_register_shell_cmd(set_pstate_impl);
 nk_register_shell_cmd(handle_dvfs_impl);
