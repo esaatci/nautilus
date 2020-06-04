@@ -195,8 +195,8 @@ static void aperfmperf_snapshot_khz(void *dummy)
 	nk_vc_printf("disabling interrupts\n");
 
 	uint8_t flags = irq_disable_save();
-	aperf = msr_read(MSR_MPERF_IA32);
-	mperf = msr_read(MSR_APERF_IA32);
+	mperf = msr_read(MSR_MPERF_IA32);
+	aperf = msr_read(MSR_APERF_IA32);
 	irq_enable_restore(flags);
 
 	nk_vc_printf("enabled interrupts\n");
@@ -259,15 +259,19 @@ static int get_cpu_vendor (char name[13])
 uint64_t dvfs_init(void) {
 	// declarations 
 	cpuid_ret_t regs;
-	int supports_speedstep, supports_hw_cord, supports_hwp ,supports_act_wind_cont, supports_hwp_not; 
-	int  supports_pref_cont,supports_pack_cont;  
+	int supports_aperfmperf, supports_speedstep, supports_hw_cord, supports_hwp;
+	int supports_act_wind_cont, supports_hwp_not; 
+	int supports_tsc;
+	int supports_pref_cont,supports_pack_cont;  
 	int supports_acpi;
 	struct ia32_pm_enable_msr val;
 	
-	//get cpu characteristics 
+	// Check for Genuine Intel
 	if(!is_intel()) 
-		{ nk_vc_printf("NOT intel\n");
-		return 1;}
+	{ 
+		nk_vc_printf("NOT intel\n");
+		return 1;
+	}
 
 	/*
 	// check for intel speedstep 
@@ -282,49 +286,66 @@ uint64_t dvfs_init(void) {
 	}	
 	*/
 
-	// check for intel acpi
+	// CPUID on 0x1
 	if(cpuid(0x1, &regs) != 0) {
-		nk_vc_printf("CPUID failed\n");
+		nk_vc_printf("CPUID 0x1 failed\n");
 		return 1;
 	}	
+
+	/*
 	supports_acpi = !!(regs.d & (1 << 22));
 	nk_vc_printf("supports p_state: %d and the regs.c : %08x \n", supports_acpi, regs.d);
 	if(!supports_acpi) {
 		return -1;
 	}	
+	*/
 
-	/*
-	// check for hardware cordination 	
+	// check that TSC register exists
+	supports_tsc = !!(regs.d & (1 << 4));
+	nk_vc_printf("Supports timestamp counter: %d\n", supports_tsc);
+	
+	// CPUID on 0x6	
 	if(cpuid(0x6, &regs) != 0)
+	{
+		nk_vc_printf("CPUID 0x6 failed\n");
 		return 1; 
+	}
+
+	// check that aperfmperf registers exist
+	supports_aperfmperf = !!(regs.c & (1 << 0));
+	nk_vc_printf("Supports aperfmperf: %d\n", supports_aperfmperf);
 
 	supports_hw_cord = !!(regs.c & (1 << 15));
 	supports_hwp = !!(regs.a & (1 << 7));
 	supports_hwp_not = !!(regs.a & (1 << 8)); 
 	supports_act_wind_cont = !!(regs.a & (1 << 9));  
 	supports_pref_cont = !!(regs.a & (1 << 10));  
-	supports_pack_cont = !!(regs.a & (1 << 11));  
+	supports_pack_cont = !!(regs.a & (1 << 11)); 
+
 	// disable hwp 	
-	if(supports_hwp) {
+	if(supports_hwp) 
+	{
+		nk_vc_printf("HWP Supported.\n");
 		val.val = msr_read(IA32_PM_ENABLE_MSR);
 		val.reg.hwp_enable = 0;
 		msr_write(IA32_PM_ENABLE_MSR, val.val);
+		nk_vc_printf("HWP Disabled.\n");
 	}
+
 	//disable turbo 	
-	*/
-//	set_turbo(0);	
+	//	set_turbo(0);	
 
 	// enable speedstep
 	uint64_t temp;
 
-	temp =   msr_read(MSR_MISC_ENABLE_IA32);
+	temp = msr_read(MSR_MISC_ENABLE_IA32);
 	nk_vc_printf("temp is %08x\n", temp);
-        // enable speedstep (probably already on)
+
+    // enable speedstep (probably already on)
 	temp |= 1 << 16;
 	nk_vc_printf("new temp is %08x\n", temp);
-    	msr_write(MSR_MISC_ENABLE_IA32, temp);	
+    msr_write(MSR_MISC_ENABLE_IA32, temp);	
 	return supports_acpi;
-
 }
 
 static int handle_get_pstate(char * buf, void * priv)

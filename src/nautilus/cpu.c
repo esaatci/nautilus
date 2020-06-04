@@ -84,7 +84,7 @@ nk_detect_cpu_freq (uint32_t cpu)
 
 out_err:
     irq_enable_restore(flags);
-    return -1;
+    return 0xDEADBEEF;
 }
 
 
