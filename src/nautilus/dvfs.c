@@ -31,21 +31,21 @@ static uint16_t get_pstate_intel(void);
 
 // Core information
 static struct pstate_data {
-	uint64_t     current_pstate;
-	uint64_t      min_pstate;
-	uint64_t      max_pstate;				// Curret - sw?
-	uint64_t      max_pstate_physical;  /// HW imposed max?
+	// Pstate Information
+	uint64_t current_pstate;
+	uint64_t min_pstate;
+	uint64_t max_pstate;				// Curret - sw?
+	uint64_t max_pstate_physical;  /// HW imposed max?
 
 	// Added freq info in KHz
-	uint64_t		current_freq_khz;
-	uint64_t		min_freq_khz;
-	uint64_t		max_freq_khz;
+	uint64_t cpu_base_khz;
+	uint64_t max_freq_khz;
 
 	// ?
-	uint64_t      scaling;
+	uint64_t scaling;
 
 	// turbo boost related
-	uint64_t     turbo_pstate;
+	uint64_t turbo_pstate;
 	unsigned int max_freq;
 	unsigned int turbo_freq;
 
@@ -55,10 +55,10 @@ static struct pstate_data {
 	uint8_t no_turbo;
 
 	// Copied from linux cpu freq policy struct // line 68, cpufreq.h
-	unsigned int		restore_freq; /* = policy->cur before transition */
-	unsigned int		suspend_freq;
-	struct cpufreq_frequency_table	*freq_table; // already filled (hard!!!) prediction? (like bp)
-	unsigned int		transition_delay_us; // ? nice to have. Maybe do it. CPUID?? 
+	unsigned int restore_freq; /* = policy->cur before transition */
+	unsigned int suspend_freq;
+	struct cpufreq_frequency_table *freq_table; // already filled (hard!!!) prediction? (like bp)
+	unsigned int transition_delay_us; // ? nice to have. Maybe do it. CPUID?? 
 } pstate_data;
 
 struct aperfmperf_sample {
@@ -192,18 +192,20 @@ static void aperfmperf_snapshot_khz(void *dummy)
 	nk_vc_printf("I'm getting the per cpu sample\n");
 	struct aperfmperf_sample *s = per_cpu_get(sample);
 	//unsigned long flags;
-	nk_vc_printf("disabling interrupts\n");
+	nk_vc_printf("Disabled interrupts\n");
 
 	uint8_t flags = irq_disable_save();
 	mperf = msr_read(MSR_MPERF_IA32);
 	aperf = msr_read(MSR_APERF_IA32);
 	irq_enable_restore(flags);
 
-	nk_vc_printf("enabled interrupts\n");
+	nk_vc_printf("Enabled interrupts\n");
 	aperf_delta = aperf - s->aperf;
 	mperf_delta = mperf - s->mperf;
 	nk_vc_printf("aperf has: %016x\n", aperf);
 	nk_vc_printf("mperf has: %016x\n", mperf);
+	nk_vc_printf("aperf_delta has: %016x\n", aperf_delta);
+	nk_vc_printf("mperf_delta has: %016x\n", mperf_delta);
 
 	/*
 	 * There is no architectural guarantee that MPERF
@@ -214,15 +216,17 @@ static void aperfmperf_snapshot_khz(void *dummy)
 		return;
 	}
 
+	/*
 	nk_vc_printf("getting cpu_khz\n");
 	ulong_t cur_khz = per_cpu_get(cpu_khz);
-
 	nk_vc_printf("cpu_khz is: %016x\n", cur_khz);
+	*/
+
 	s->time = 0; // Need nautilus version
 	s->aperf = aperf;
 	s->mperf = mperf;
-	s->khz = (cur_khz * aperf_delta) / mperf_delta;
-	nk_vc_printf("the runtime khz is: %u\n", s->khz);
+	s->khz = (pstate_data.cpu_base_khz * aperf_delta) / mperf_delta;
+	nk_vc_printf("The current running frequency is: %d KHz\n", s->khz);
 
 }
 
@@ -265,6 +269,7 @@ uint64_t dvfs_init(void) {
 	int supports_pref_cont,supports_pack_cont;  
 	int supports_acpi;
 	struct ia32_pm_enable_msr val;
+	struct aperfmperf_sample *s = per_cpu_get(sample);
 	
 	// Check for Genuine Intel
 	if(!is_intel()) 
@@ -321,6 +326,17 @@ uint64_t dvfs_init(void) {
 	supports_act_wind_cont = !!(regs.a & (1 << 9));  
 	supports_pref_cont = !!(regs.a & (1 << 10));  
 	supports_pack_cont = !!(regs.a & (1 << 11)); 
+
+	// CPUID on 0x16
+	if(cpuid(0x16, &regs) != 0)
+	{
+		nk_vc_printf("CPUID 0x16 failed\n");
+		return 1; 
+	}
+	pstate_data.cpu_base_khz = regs.a * 1000;
+	pstate_data.max_freq_khz = regs.b * 1000;
+	nk_vc_printf("CPU Base Frequency: %d KHz\n", pstate_data.cpu_base_khz);
+	nk_vc_printf("CPU Maximum Frequency: %d KHz\n", pstate_data.max_freq_khz);
 
 	// disable hwp 	
 	if(supports_hwp) 
