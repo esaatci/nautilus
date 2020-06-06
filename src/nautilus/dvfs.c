@@ -5,6 +5,7 @@
 #include <nautilus/cpuid.h>
 #include <nautilus/smp.h>
 #include <nautilus/irq.h>
+#include <nautilus/hashtable.h>
 
 #define MSR_MPERF_IA32         	0x000000e7
 #define MSR_APERF_IA32         	0x000000e8
@@ -14,6 +15,8 @@
 #define IA32_PERF_CTL 			0x00000199
 #define MSR_MISC_ENABLE_IA32  	0x000001a0
 
+#define LOOP_ITER 1000000
+#define TABLE_SIZE (1 << 16)
 #define INFO(fmt, args...) INFO_PRINT("DVFS: " fmt, ##args)
 #define ERROR(fmt, args...) ERROR_PRINT("DVFS: " fmt, ##args)
 #define NAUT_CONFIG_DEBUG_DVFS 1
@@ -28,7 +31,11 @@ static int is_intel (void);
 static int get_cpu_vendor (char name[13]);
 static int set_pstate(uint16_t pstate); 
 static uint16_t get_pstate_intel(void);
+static void freq_table_init(cpufreq_frequency_table *freq_table);
+static uint64_t hash_from_key_fn( void *k );
+static int keys_equal_fn ( void *key1, void *key2 );
 
+typedef struct nk_hashtable cpufreq_frequency_table;
 // Core information
 static struct pstate_data {
 	// Pstate Information
@@ -57,7 +64,7 @@ static struct pstate_data {
 	// Copied from linux cpu freq policy struct // line 68, cpufreq.h
 	unsigned int restore_freq; /* = policy->cur before transition */
 	unsigned int suspend_freq;
-	struct cpufreq_frequency_table *freq_table; // already filled (hard!!!) prediction? (like bp)
+	cpufreq_frequency_table *freq_table; // already filled (hard!!!) prediction? (like bp)
 	unsigned int transition_delay_us; // ? nice to have. Maybe do it. CPUID?? 
 } pstate_data;
 
@@ -75,6 +82,13 @@ struct vid_data {
           uint32_t ratio;
 };
 
+struct some_key {
+		double key;
+};
+struct some_value{
+	int value;
+};
+
 /*
 struct cpu {
 
@@ -90,6 +104,23 @@ struct cpu {
 
 struct cpu my_cpu;
 */
+
+static uint64_t hash_from_key_fn( void *k ) {
+	return k % TABLE_SIZE;
+}
+
+static int keys_equal_fn ( void *key1, void *key2 ) {
+
+	uint64_t h1, h2;
+
+	h1 = hash_from_key_fn(key1);
+	h2 = hash_from_key_fn(key2);
+
+	return h1 == h2;
+
+}
+
+
 
 struct ia32_pm_enable_msr {
 	union {
@@ -135,6 +166,82 @@ static inline void set_turbo(int enable)
 	msr_write(IA32_PERF_CTL, perf_ctl.val);
 }
 
+
+static void freq_table_init(cpufreq_frequency_table *freq_table) {
+
+	uint64_t t1,t2 delta, base_time;
+	uint16_t i;
+	double ratio;
+	
+	
+	
+	
+	
+	struct some_key   *k;
+	struct some_value *v;
+	
+	freq_table = create_hashtable(TABLE_SIZE, hash_from_key_fn, keys_equal_fn);
+	k = (struct some_key *)     malloc(sizeof(struct some_key));
+	v = (struct some_value *)   malloc(sizeof(struct some_value));
+
+
+	uint8_t flags = irq_disable_save();	
+	for(i=0; i < 2**16-1; i++) {
+
+		set_pstate(i);
+		while(get_pstate_intel() != i);
+
+		t1 = rdtsc();
+		nk_simple_timing_loop(LOOP_ITER);
+		t2 = rdtsc();
+
+		delta = t2 - t1;
+		if(i == 0) {
+			base_time = delta;
+		}
+		else {
+			ratio = base_time / delta;
+			if (! hashtable_insert(freq_table,k,v)) {
+				nk_vc_printf("I can't insert %f, %d\n", ratio, i);
+			}
+		}
+
+	}
+	irq_enable_restore(flags);	
+	free(k);
+	free(v);
+
+
+}
+
+void set_freq(uint64_t freq) {
+	
+	nk_vc_printf("i want to set the freq to %f\n", freq);
+	double ratio = freq / pstate_data.cpu_base_khz;
+	nk_vc_printf("the ratio is %f\n", ratio);
+	uint16_t p_state;
+	struct some_key k;
+	struct some_value *v;
+	v = (struct some_value *) malloc(sizeof(struct some_value));
+	
+	k.key = ratio;
+	
+	v = nk_htable_search(pstate_data.freq_table, &k);
+	if(v == NULL) {
+		nk_vc_printf("I can't find the ratio %f\n", ratio);
+		return;
+	}
+	p_state = v->value;
+	nk_vc_printf("the p_State value is %d\n", p_state);
+
+	set_pstate(p_state);
+
+	free(v);
+
+
+}
+
+
 static int set_pstate(uint16_t pstate) {
 	DEBUG("I call set_pstate().\n");
 	nk_vc_printf("I call set_pstate().\n");
@@ -172,6 +279,7 @@ static uint16_t get_pstate_intel(void)
 
     return perf.reg.pstate;
 }
+
 
 // Get current cpu frequency
 /*
