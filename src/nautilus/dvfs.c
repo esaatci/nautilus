@@ -173,14 +173,11 @@ static void freq_table_init(cpufreq_frequency_table *freq_table) {
 	uint16_t i;
 	double ratio;
 	
-	
-	
-	
-	
+		
 	struct some_key   *k;
 	struct some_value *v;
 	
-	freq_table = hk_create_hashtable(TABLE_SIZE, hash_from_key_fn, keys_equal_fn);
+	freq_table = nk_create_htable(TABLE_SIZE, hash_from_key_fn, keys_equal_fn);
 	k = (struct some_key *)     malloc(sizeof(struct some_key));
 	v = (struct some_value *)   malloc(sizeof(struct some_value));
 
@@ -201,7 +198,7 @@ static void freq_table_init(cpufreq_frequency_table *freq_table) {
 		}
 		else {
 			ratio = base_time / delta;
-			if (!nk_hashtable_insert(freq_table,k,v)) {
+			if (!nk_htable_insert(freq_table,k,v)) {
 				nk_vc_printf("I can't insert %f, %d\n", ratio, i);
 			}
 		}
@@ -468,7 +465,9 @@ uint64_t dvfs_init(void) {
     // enable speedstep (probably already on)
 	temp |= 1 << 16;
 	nk_vc_printf("new temp is %08x\n", temp);
-    msr_write(MSR_MISC_ENABLE_IA32, temp);	
+    msr_write(MSR_MISC_ENABLE_IA32, temp);
+	pstate_data.freq_table = (cpufreq_frequency_table *) malloc(sizof(cpufreq_frequency_table));
+	freq_table_init(pstate_data.freq_table);
 	return supports_acpi;
 }
 
@@ -494,18 +493,18 @@ static int handle_set_pstate(char *buf, void *priv) {
 	return 0;
 }
 
+
+
 static int handle_set_freq(char *buf, void *priv) {
-	uint32_t state;	
-	if(sscanf(buf, "set_pstate %d", &state) == 1) {
+	uint64_t state;	
+	if(sscanf(buf, "set_freq %d", &state) == 1) {
 	
-		if(set_pstate(state)) {
-			nk_vc_printf("can't set pstate\n");
-		}
+		set_freq(state);
 	}
 	else {
-	nk_vc_printf("can't parse the command\n");
+		nk_vc_printf("can't parse the command\n");
 	}
-	
+
 	return 0;
 }
 
@@ -529,6 +528,12 @@ static struct shell_cmd_impl handle_snapshot_impl = {
     .handler  = handle_aperfmpref_snapshot
 };
 
+static struct shell_cmd_impl handle_freq_impl = {
+    .cmd      = "set_freq",
+    .help_str = "sets the freq!",
+    .handler  = handle_set_freq
+};
+
 static struct shell_cmd_impl get_pstate_impl = {
     .cmd      = "get_pstate",
     .help_str = "Gets the pstate!",
@@ -548,7 +553,7 @@ static struct shell_cmd_impl handle_dvfs_impl = {
 };
 
 
-
+nk_register_shell_cmd(handle_freq_impl);
 nk_register_shell_cmd(handle_snapshot_impl);
 nk_register_shell_cmd(get_pstate_impl);
 nk_register_shell_cmd(set_pstate_impl);
