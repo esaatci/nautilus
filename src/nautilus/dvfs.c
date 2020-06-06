@@ -26,7 +26,7 @@
 #undef DEBUG
 #define DEBUG(fmt, args...) DEBUG_PRINT("DVFS: " fmt, ##args)
 #endif
-
+typedef struct nk_hashtable cpufreq_frequency_table;
 static int is_intel (void);
 static int get_cpu_vendor (char name[13]);
 static int set_pstate(uint16_t pstate); 
@@ -34,8 +34,8 @@ static uint16_t get_pstate_intel(void);
 static void freq_table_init(cpufreq_frequency_table *freq_table);
 static uint64_t hash_from_key_fn( void *k );
 static int keys_equal_fn ( void *key1, void *key2 );
+extern void nk_simple_timing_loop(uint64_t iter_count);
 
-typedef struct nk_hashtable cpufreq_frequency_table;
 // Core information
 static struct pstate_data {
 	// Pstate Information
@@ -106,7 +106,7 @@ struct cpu my_cpu;
 */
 
 static uint64_t hash_from_key_fn( void *k ) {
-	return k % TABLE_SIZE;
+	return (int)k % TABLE_SIZE;
 }
 
 static int keys_equal_fn ( void *key1, void *key2 ) {
@@ -169,7 +169,7 @@ static inline void set_turbo(int enable)
 
 static void freq_table_init(cpufreq_frequency_table *freq_table) {
 
-	uint64_t t1,t2 delta, base_time;
+	uint64_t t1, t2 ,delta, base_time;
 	uint16_t i;
 	double ratio;
 	
@@ -180,13 +180,13 @@ static void freq_table_init(cpufreq_frequency_table *freq_table) {
 	struct some_key   *k;
 	struct some_value *v;
 	
-	freq_table = create_hashtable(TABLE_SIZE, hash_from_key_fn, keys_equal_fn);
+	freq_table = hk_create_hashtable(TABLE_SIZE, hash_from_key_fn, keys_equal_fn);
 	k = (struct some_key *)     malloc(sizeof(struct some_key));
 	v = (struct some_value *)   malloc(sizeof(struct some_value));
 
 
 	uint8_t flags = irq_disable_save();	
-	for(i=0; i < 2**16-1; i++) {
+	for(i=0; i < (1 << 16); i++) {
 
 		set_pstate(i);
 		while(get_pstate_intel() != i);
@@ -201,7 +201,7 @@ static void freq_table_init(cpufreq_frequency_table *freq_table) {
 		}
 		else {
 			ratio = base_time / delta;
-			if (! hashtable_insert(freq_table,k,v)) {
+			if (!nk_hashtable_insert(freq_table,k,v)) {
 				nk_vc_printf("I can't insert %f, %d\n", ratio, i);
 			}
 		}
@@ -480,6 +480,21 @@ static int handle_get_pstate(char * buf, void * priv)
 }
 
 static int handle_set_pstate(char *buf, void *priv) {
+	uint32_t state;	
+	if(sscanf(buf, "set_pstate %d", &state) == 1) {
+	
+		if(set_pstate(state)) {
+			nk_vc_printf("can't set pstate\n");
+		}
+	}
+	else {
+	nk_vc_printf("can't parse the command\n");
+	}
+	
+	return 0;
+}
+
+static int handle_set_freq(char *buf, void *priv) {
 	uint32_t state;	
 	if(sscanf(buf, "set_pstate %d", &state) == 1) {
 	
