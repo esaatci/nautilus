@@ -15,7 +15,7 @@
 #define IA32_PERF_CTL 			0x00000199
 #define MSR_MISC_ENABLE_IA32  	0x000001a0
 
-#define LOOP_ITER 1000000
+#define LOOP_ITER 10000000
 #define TABLE_SIZE (1 << 16)
 #define INFO(fmt, args...) INFO_PRINT("DVFS: " fmt, ##args)
 #define ERROR(fmt, args...) ERROR_PRINT("DVFS: " fmt, ##args)
@@ -32,8 +32,8 @@ static int get_cpu_vendor (char name[13]);
 static int set_pstate(uint16_t pstate); 
 static uint16_t get_pstate_intel(void);
 static void freq_table_init(cpufreq_frequency_table *freq_table);
-static uint64_t hash_from_key_fn( void *k );
-static int keys_equal_fn ( void *key1, void *key2 );
+static uint_t hash_from_key_fn( addr_t key );
+static int keys_equal_fn ( addr_t key1, addr_t key2 );
 extern void nk_simple_timing_loop(uint64_t iter_count);
 
 // Core information
@@ -82,13 +82,6 @@ struct vid_data {
           uint32_t ratio;
 };
 
-struct some_key {
-		double key;
-};
-struct some_value{
-	int value;
-};
-
 /*
 struct cpu {
 
@@ -104,23 +97,6 @@ struct cpu {
 
 struct cpu my_cpu;
 */
-
-static uint64_t hash_from_key_fn( void *k ) {
-	return (int)k % TABLE_SIZE;
-}
-
-static int keys_equal_fn ( void *key1, void *key2 ) {
-
-	uint64_t h1, h2;
-
-	h1 = hash_from_key_fn(key1);
-	h2 = hash_from_key_fn(key2);
-
-	return h1 == h2;
-
-}
-
-
 
 struct ia32_pm_enable_msr {
 	union {
@@ -166,38 +142,59 @@ static inline void set_turbo(int enable)
 	msr_write(IA32_PERF_CTL, perf_ctl.val);
 }
 
+static uint_t hash_from_key_fn( addr_t key ) {
+	return key % TABLE_SIZE;
+}
+
+static int keys_equal_fn ( addr_t key1, addr_t key2 ) {
+
+	uint64_t h1, h2;
+
+	h1 = hash_from_key_fn(key1);
+	h2 = hash_from_key_fn(key2);
+
+	return h1 == h2;
+
+}
+
 
 static void freq_table_init(cpufreq_frequency_table *freq_table) {
 
 	uint64_t t1, t2 ,delta, base_time;
 	uint16_t i;
 	double ratio;
-	
-		
-	struct some_key   *k;
-	struct some_value *v;
+	addr_t k;
+	addr_t v;
+	uint64_t old_pstate;
 	
 	freq_table = nk_create_htable(TABLE_SIZE, hash_from_key_fn, keys_equal_fn);
-	k = (struct some_key *)     malloc(sizeof(struct some_key));
-	v = (struct some_value *)   malloc(sizeof(struct some_value));
-
+	nk_vc_printf("Allocated the freq_table.\n");
 
 	uint8_t flags = irq_disable_save();	
-	for(i=0; i < (1 << 16); i++) {
+	for(i=5376; i < (1 << 16); i++) {
 
+		uint64_t old_pstate = get_pstate_intel();
 		set_pstate(i);
-		while(get_pstate_intel() != i);
+
+		nk_simple_timing_loop(LOOP_ITER / 10000);
+
+		if (get_pstate_intel() == old_pstate) {
+			nk_vc_printf("Advance to next iteration. Pstate did not change\n");
+			continue;
+		}
 
 		t1 = rdtsc();
 		nk_simple_timing_loop(LOOP_ITER);
 		t2 = rdtsc();
 
 		delta = t2 - t1;
-		if(i == 0) {
+		if(i == 5376) {
 			base_time = delta;
 		}
 		else {
 			ratio = base_time / delta;
+			k = *((addr_t*)(&ratio));
+			v = (addr_t)i;
 			if (!nk_htable_insert(freq_table,k,v)) {
 				nk_vc_printf("I can't insert %f, %d\n", ratio, i);
 			}
@@ -205,10 +202,6 @@ static void freq_table_init(cpufreq_frequency_table *freq_table) {
 
 	}
 	irq_enable_restore(flags);	
-	free(k);
-	free(v);
-
-
 }
 
 void set_freq(uint64_t freq) {
@@ -217,31 +210,76 @@ void set_freq(uint64_t freq) {
 	double ratio = freq / pstate_data.cpu_base_khz;
 	nk_vc_printf("the ratio is %f\n", ratio);
 	uint16_t p_state;
-	struct some_key k;
-	struct some_value *v;
-	v = (struct some_value *) malloc(sizeof(struct some_value));
+	addr_t k;
+	addr_t v;
 	
-	k.key = ratio;
-	
-	v = nk_htable_search(pstate_data.freq_table, &k);
+	k = *((addr_t*)(&ratio));
+	v = nk_htable_search(pstate_data.freq_table, k);
+	/*
 	if(v == NULL) {
 		nk_vc_printf("I can't find the ratio %f\n", ratio);
 		return;
 	}
-	p_state = v->value;
+	*/
+
+	p_state = v;
 	nk_vc_printf("the p_State value is %d\n", p_state);
-
 	set_pstate(p_state);
+}
 
-	free(v);
+#define FREQ_TOLERANCE 50
+typedef struct 
+{
+	uint16_t pstate;
+	uint64_t frequency;
+} table_entry;
+table_entry table[TABLE_SIZE];
 
+static void freq_table_init2 (void)
+{
+	struct aperfmperf_sample *s = per_cpu_get(sample);
+	int i;
+
+	uint8_t flags = irq_disable_save();	
+	for(i=0; i < (1 << 16); i++)
+	{
+		// Set pstate
+		set_pstate(i);
+
+		// Stall
+		nk_simple_timing_loop(LOOP_ITER / 10000);
+
+		// Store pstate/freq pair into the table
+		table[i].pstate = i;
+		table[i].frequency = s->khz;
+	}
+	irq_enable_restore(flags);	
+
+}
+
+void set_freq2(uint64_t freq) {
+
+	uint8_t flags = irq_disable_save();	
+	int i;
+
+	for(i=0; i < (1 << 16); i++)
+	{
+		// Store pstate/freq pair into the table
+		if ( freq + FREQ_TOLERANCE > table[i].frequency || freq - FREQ_TOLERANCE < table[i].frequency)
+		{
+			set_pstate(table[i].pstate);
+			nk_vc_printf("We decided to set the pstate to %016x\n", table[i].pstate);
+			break;
+		}
+	}
+	irq_enable_restore(flags);	
 
 }
 
 
 static int set_pstate(uint16_t pstate) {
-	DEBUG("I call set_pstate().\n");
-	nk_vc_printf("I call set_pstate().\n");
+	//DEBUG("I call set_pstate().\n");
+	//nk_vc_printf("I call set_pstate().\n");
 	struct ia32_perf_ctl perf_ctl;	
 	/*
 	if (my_cpu.pstate.current_pstate == pstate)
@@ -252,14 +290,14 @@ static int set_pstate(uint16_t pstate) {
 		return 1;
 	*/
 	perf_ctl.val = msr_read(IA32_PERF_CTL);
-	nk_vc_printf("I read %016x\n", perf_ctl.val);
+	//nk_vc_printf("I read %016x\n", perf_ctl.val);
 	perf_ctl.reg.pstate = pstate;
 	pstate_data.current_pstate = pstate;
-	nk_vc_printf("I write %016x\n", perf_ctl.val);
+	//nk_vc_printf("I write %016x\n", perf_ctl.val);
 	msr_write(IA32_PERF_CTL, perf_ctl.val);
 
 	// MAKE SURE MSR has been written to.
-	nk_vc_printf("Done! As a result, we've written %016x\n", msr_read(IA32_PERF_CTL));
+	//nk_vc_printf("Done! As a result, we've written %016x\n", msr_read(IA32_PERF_CTL));
 	return 0;
 }
 
@@ -332,7 +370,6 @@ static void aperfmperf_snapshot_khz(void *dummy)
 	s->mperf = mperf;
 	s->khz = (pstate_data.cpu_base_khz * aperf_delta) / mperf_delta;
 	nk_vc_printf("The current running frequency is: %d KHz\n", s->khz);
-
 }
 
 static inline void cpuid_string (uint32_t id, uint32_t dest[4]) 
@@ -466,8 +503,10 @@ uint64_t dvfs_init(void) {
 	temp |= 1 << 16;
 	nk_vc_printf("new temp is %08x\n", temp);
     msr_write(MSR_MISC_ENABLE_IA32, temp);
-	pstate_data.freq_table = (cpufreq_frequency_table *) malloc(sizof(cpufreq_frequency_table));
-	freq_table_init(pstate_data.freq_table);
+
+	//freq_table_init(pstate_data.freq_table);
+	//nk_vc_printf("Successfully initialized freq_table\n");
+
 	return supports_acpi;
 }
 
@@ -499,7 +538,7 @@ static int handle_set_freq(char *buf, void *priv) {
 	uint64_t state;	
 	if(sscanf(buf, "set_freq %d", &state) == 1) {
 	
-		set_freq(state);
+		set_freq2(state);
 	}
 	else {
 		nk_vc_printf("can't parse the command\n");
@@ -522,15 +561,24 @@ static int handle_aperfmpref_snapshot(char * buf, void * priv)
 	aperfmperf_snapshot_khz(NULL);
 	return 0;
 }
+
+static int handle_freq_table_init(char * buf, void * priv)
+{
+	//freq_table_init(pstate_data.freq_table);
+	freq_table_init2();
+	nk_vc_printf("Successfully initialized freq_table\n");
+	return 0;
+}
+
 static struct shell_cmd_impl handle_snapshot_impl = {
-    .cmd      = "snapshot",
+    .cmd      = "get_freq",
     .help_str = "Gets the snapshot of current kHz!",
     .handler  = handle_aperfmpref_snapshot
 };
 
 static struct shell_cmd_impl handle_freq_impl = {
     .cmd      = "set_freq",
-    .help_str = "sets the freq!",
+    .help_str = "Sets the freq!",
     .handler  = handle_set_freq
 };
 
@@ -549,7 +597,13 @@ static struct shell_cmd_impl set_pstate_impl = {
 static struct shell_cmd_impl handle_dvfs_impl = {
     .cmd      = "dvfs",
     .help_str = "inits dvfs",
-    .handler  = handle_dvfs_init,
+    .handler  = handle_dvfs_init
+};
+
+static struct shell_cmd_impl handle_freq_table_init_impl = {
+    .cmd      = "freq_table_init",
+    .help_str = "Freq Table Init",
+    .handler  = handle_freq_table_init
 };
 
 
@@ -558,3 +612,4 @@ nk_register_shell_cmd(handle_snapshot_impl);
 nk_register_shell_cmd(get_pstate_impl);
 nk_register_shell_cmd(set_pstate_impl);
 nk_register_shell_cmd(handle_dvfs_impl);
+nk_register_shell_cmd(handle_freq_table_init_impl);
