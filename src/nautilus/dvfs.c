@@ -6,6 +6,7 @@
 #include <nautilus/smp.h>
 #include <nautilus/irq.h>
 #include <nautilus/hashtable.h>
+#include <nautilus/libccompat.h>
 
 #define MSR_MPERF_IA32         	0x000000e7
 #define MSR_APERF_IA32         	0x000000e8
@@ -318,17 +319,21 @@ void set_freq2(uint64_t freq) {
 
 	uint8_t flags = irq_disable_save();	
 	int i;
+	double difference = (1 << 16);
+	uint16_t saved_pstate = 0;
 
 	for(i=0; i < (1 << 16); i++)
 	{
 		// Store pstate/freq pair into the table
-		if ( table[i].frequency + FREQ_TOLERANCE > freq && table[i].frequency - FREQ_TOLERANCE < freq)
+		//if ( table[i].frequency + FREQ_TOLERANCE > freq && table[i].frequency - FREQ_TOLERANCE < freq)
+		if (abs((double)table[i].frequency - (double)freq) < (double)difference)
 		{
-			set_pstate(table[i].pstate);
-			nk_vc_printf("We decided to set the pstate to %016x\n", table[i].pstate);
-			break;
+			difference = abs((double)table[i].frequency - (double)freq);
+			saved_pstate = table[i].pstate;
 		}
 	}
+	set_pstate(saved_pstate);
+	nk_vc_printf("We decided to set the pstate to %016x\n", saved_pstate);
 	irq_enable_restore(flags);	
 
 }
