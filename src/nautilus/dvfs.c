@@ -143,36 +143,36 @@ smp_xcall (cpu_id_t cpu_id,
 uint8_t flags = irq_disable_save();
 irq_enable_restore(flags);
 */
-static void aperfmperf_snapshot_khz(void *dummy)
+uint64_t aperfmperf_snapshot_khz(void *dummy)
 {
 	uint64_t aperf, aperf_delta;
 	uint64_t mperf, mperf_delta;
 	//struct aperfmperf_sample *s = this_cpu_ptr(&samples);
-	nk_vc_printf("I'm getting the per cpu sample\n");
+	//nk_vc_printf("I'm getting the per cpu sample\n");
 	struct aperfmperf_sample *s = per_cpu_get(sample);
 	//unsigned long flags;
-	nk_vc_printf("Disabled interrupts\n");
+	//nk_vc_printf("Disabled interrupts\n");
 
 	uint8_t flags = irq_disable_save();
 	mperf = msr_read(MSR_MPERF_IA32);
 	aperf = msr_read(MSR_APERF_IA32);
 	irq_enable_restore(flags);
 
-	nk_vc_printf("Enabled interrupts\n");
+	//nk_vc_printf("Enabled interrupts\n");
 	aperf_delta = aperf - s->aperf;
 	mperf_delta = mperf - s->mperf;
-	nk_vc_printf("aperf has: %016x\n", aperf);
+	/*nk_vc_printf("aperf has: %016x\n", aperf);
 	nk_vc_printf("mperf has: %016x\n", mperf);
 	nk_vc_printf("aperf_delta has: %016x\n", aperf_delta);
 	nk_vc_printf("mperf_delta has: %016x\n", mperf_delta);
-
+	*/
 	/*
 	 * There is no architectural guarantee that MPERF
 	 * increments faster than we can read it.
 	 */
 	if (mperf_delta == 0)
 	{
-		return;
+		return 0;
 	}
 
 	/*
@@ -185,7 +185,8 @@ static void aperfmperf_snapshot_khz(void *dummy)
 	s->aperf = aperf;
 	s->mperf = mperf;
 	s->khz = (pstate_data.cpu_base_khz * aperf_delta) / mperf_delta;
-	nk_vc_printf("The current running frequency is: %d KHz\n", s->khz);
+	//nk_vc_printf("The current running frequency is: %d KHz\n", s->khz);
+	return s->khz;
 }
 
 static inline void set_turbo(int enable) 
@@ -306,9 +307,8 @@ static void freq_table_init2 (void)
 		nk_simple_timing_loop(LOOP_ITER / 10000);
 
 		// Store pstate/freq pair into the table
-		aperfmperf_snapshot_khz(NULL);
 		table[i].pstate = i;
-		table[i].frequency = s->khz;
+		table[i].frequency = aperfmperf_snapshot_khz(NULL);
 	}
 	irq_enable_restore(flags);	
 
@@ -322,7 +322,7 @@ void set_freq2(uint64_t freq) {
 	for(i=0; i < (1 << 16); i++)
 	{
 		// Store pstate/freq pair into the table
-		if ( freq + FREQ_TOLERANCE > table[i].frequency || freq - FREQ_TOLERANCE < table[i].frequency)
+		if ( table[i].frequency + FREQ_TOLERANCE > freq && table[i].frequency - FREQ_TOLERANCE < freq)
 		{
 			set_pstate(table[i].pstate);
 			nk_vc_printf("We decided to set the pstate to %016x\n", table[i].pstate);
