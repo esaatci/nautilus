@@ -417,7 +417,7 @@ void nk_set_freq(uint64_t freq) {
 	}
 	set_pstate(saved_pstate);
 	nk_vc_printf("We decided to set the pstate to %016x\n", saved_pstate);
-	nk_vc_printf("The closest frequency we found in the table was %d\n", (double)table[saved_i].frequency);
+	//nk_vc_printf("The closest frequency we found in the table was %d\n", (double)table[saved_i].frequency);
 	irq_enable_restore(flags);	
 
 }
@@ -514,18 +514,20 @@ uint64_t nk_dvfs_init(void) {
 		nk_vc_printf("HWP Disabled.\n");
 	}
 
-	//disable turbo 	
-	//	set_turbo(0);	
+	// disable turbo 	
+	set_turbo(0);	
 
 	// enable speedstep
 	uint64_t temp;
 
 	temp = msr_read(MSR_MISC_ENABLE_IA32);
-	nk_vc_printf("temp is %08x\n", temp);
+	//nk_vc_printf("temp is %08x\n", temp);
 
     // enable speedstep (probably already on)
 	temp |= 1 << 16;
-	nk_vc_printf("new temp is %08x\n", temp);
+	//nk_vc_printf("new temp is %08x\n", temp);
+	nk_vc_printf("Intel Enhanced Speedstep Technology enabled.\n");
+
     msr_write(MSR_MISC_ENABLE_IA32, temp);
 
 #if TABLE_IMPL == 1
