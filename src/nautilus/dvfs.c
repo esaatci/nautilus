@@ -376,6 +376,8 @@ static void freq_table_init(void)
 	struct aperfmperf_sample *s = per_cpu_get(sample);
 	int i;
 
+	nk_vc_printf("Calling freq_table_init.\n");
+
 	uint8_t flags = irq_disable_save();	
 	for(i=0; i < (1 << 16); i++)
 	{
@@ -391,11 +393,13 @@ static void freq_table_init(void)
 	}
 	irq_enable_restore(flags);	
 
+	nk_vc_printf("We are done calling freq_table_init. Return!\n");
 }
+
 void nk_set_freq(uint64_t freq) {
 
 	uint8_t flags = irq_disable_save();	
-	int i;
+	int i, saved_i;
 	double difference = (1 << 16);
 	uint16_t saved_pstate = 0;
 
@@ -407,10 +411,12 @@ void nk_set_freq(uint64_t freq) {
 		{
 			difference = abs((double)table[i].frequency - (double)freq);
 			saved_pstate = table[i].pstate;
+			saved_i = i;
 		}
 	}
 	set_pstate(saved_pstate);
 	nk_vc_printf("We decided to set the pstate to %016x\n", saved_pstate);
+	nk_vc_printf("The closest frequency we found in the table was %d\n", (double)table[saved_i].frequency);
 	irq_enable_restore(flags);	
 
 }
