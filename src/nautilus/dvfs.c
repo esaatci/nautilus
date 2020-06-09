@@ -525,11 +525,11 @@ uint64_t nk_dvfs_init(void) {
 	freq_table_init(pstate_data.freq_table);
 #else
 	freq_table_init();
+#endif
 	nk_vc_printf("Successfully initialized freq_table\n");
 	print_flag = 1;
 	return supports_acpi;
 }
-
 uint64_t nk_dvfs_deinit(void) {
 	uint64_t status = 0;
 
@@ -546,7 +546,7 @@ uint64_t nk_dvfs_deinit(void) {
 
 static int handle_get_pstate(char * buf, void * priv)
 {
-	uint64_t val = get_pstate_intel();
+	uint64_t val = get_pstate();
 	nk_vc_printf("0x%016x\n",val);
 	return 0;
 }
@@ -572,7 +572,7 @@ static int handle_set_freq(char *buf, void *priv) {
 	uint64_t state;	
 	if(sscanf(buf, "set_freq %d", &state) == 1) {
 	
-		set_freq2(state);
+		nk_set_freq(state);
 	}
 	else {
 		nk_vc_printf("can't parse the command\n");
@@ -583,7 +583,7 @@ static int handle_set_freq(char *buf, void *priv) {
 
 static int handle_dvfs_init(char * buf, void * priv)
 {
-	int res = dvfs_init();
+	int res = nk_dvfs_init();
 	//set_turbo(1);
 	nk_vc_printf("res is: %d\n",res);
 	return 0;
@@ -596,13 +596,7 @@ static int handle_aperfmpref_snapshot(char * buf, void * priv)
 	return 0;
 }
 
-static int handle_freq_table_init(char * buf, void * priv)
-{
-	//freq_table_init(pstate_data.freq_table);
-	freq_table_init2();
-	nk_vc_printf("Successfully initialized freq_table\n");
-	return 0;
-}
+
 
 static struct shell_cmd_impl handle_snapshot_impl = {
     .cmd      = "get_freq",
@@ -634,11 +628,6 @@ static struct shell_cmd_impl handle_dvfs_impl = {
     .handler  = handle_dvfs_init
 };
 
-static struct shell_cmd_impl handle_freq_table_init_impl = {
-    .cmd      = "freq_table_init",
-    .help_str = "Freq Table Init",
-    .handler  = handle_freq_table_init
-};
 
 
 nk_register_shell_cmd(handle_freq_impl);
@@ -646,6 +635,5 @@ nk_register_shell_cmd(handle_snapshot_impl);
 nk_register_shell_cmd(get_pstate_impl);
 nk_register_shell_cmd(set_pstate_impl);
 nk_register_shell_cmd(handle_dvfs_impl);
-nk_register_shell_cmd(handle_freq_table_init_impl);
 
 /* ======================================================== */
