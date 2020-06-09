@@ -210,7 +210,8 @@ static inline void set_turbo(int enable)
 
 static int set_pstate(uint16_t pstate) {
 	DEBUG("I call set_pstate().\n");
-	nk_vc_printf("I call set_pstate().\n");
+	if(print_flag)
+		{nk_vc_printf("I call set_pstate().\n");}
 	struct ia32_perf_ctl perf_ctl;	
 	/*
 	if (my_cpu.pstate.current_pstate == pstate) 
@@ -399,7 +400,7 @@ static void freq_table_init(void)
 void nk_set_freq(uint64_t freq) {
 
 	uint8_t flags = irq_disable_save();	
-	int i, saved_i;
+	int i, saved_i = 0;
 	double difference = (1 << 16);
 	uint16_t saved_pstate = 0;
 
