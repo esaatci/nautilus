@@ -18,6 +18,8 @@
 
 #define LOOP_ITER 10000000
 #define TABLE_SIZE (1 << 16)
+
+
 #define INFO(fmt, args...) INFO_PRINT("DVFS: " fmt, ##args)
 #define ERROR(fmt, args...) ERROR_PRINT("DVFS: " fmt, ##args)
 #define NAUT_CONFIG_DEBUG_DVFS 1
@@ -27,14 +29,32 @@
 #undef DEBUG
 #define DEBUG(fmt, args...) DEBUG_PRINT("DVFS: " fmt, ##args)
 #endif
-typedef struct nk_hashtable cpufreq_frequency_table;
+
+
 static int is_intel (void);
 static int get_cpu_vendor (char name[13]);
 static int set_pstate(uint16_t pstate); 
-static uint16_t get_pstate_intel(void);
+static uint16_t get_pstate(void);
+
+static int print_flag = 0;
+
+#if TABLE_IMPL == 1
+
 static void freq_table_init(cpufreq_frequency_table *freq_table);
 static uint_t hash_from_key_fn( addr_t key );
 static int keys_equal_fn ( addr_t key1, addr_t key2 );
+typedef struct nk_hashtable cpufreq_frequency_table;
+
+#else
+typedef struct 
+{
+	uint16_t pstate;
+	uint64_t frequency;
+} table_entry;
+table_entry table[TABLE_SIZE];
+static void freq_table_init(void);
+
+#endif
 extern void nk_simple_timing_loop(uint64_t iter_count);
 
 // Core information
@@ -65,7 +85,9 @@ static struct pstate_data {
 	// Copied from linux cpu freq policy struct // line 68, cpufreq.h
 	unsigned int restore_freq; /* = policy->cur before transition */
 	unsigned int suspend_freq;
+#if TABLE_IMPL == 1
 	cpufreq_frequency_table *freq_table; // already filled (hard!!!) prediction? (like bp)
+#endif
 	unsigned int transition_delay_us; // ? nice to have. Maybe do it. CPUID?? 
 } pstate_data;
 
@@ -76,28 +98,7 @@ struct aperfmperf_sample {
 	uint64_t	mperf;
 };
 
-struct vid_data {
-          int min;
-          int max;
-          int turbo;
-          uint32_t ratio;
-};
 
-/*
-struct cpu {
-
-	cpu_id_t id;
-	enum {AMD, INTEL, OTHER} arch;
-	struct pstate_data pstate;
-		
-	// what functionality it has 
-	// max freq
-	// min freq
-	// cur_freq
-};
-
-struct cpu my_cpu;
-*/
 
 struct ia32_pm_enable_msr {
 	union {
@@ -108,6 +109,7 @@ struct ia32_pm_enable_msr {
 		}reg;
 	}__attribute__((packed));
 }__attribute__((packed));
+
 
 struct ia32_perf_ctl {
 	union {
@@ -132,6 +134,7 @@ struct perf_stat_reg_intel {
         } reg;
     } __attribute__((packed));
 } __attribute__((packed));
+
 
 // Get current cpu frequency
 /*
@@ -167,6 +170,7 @@ uint64_t aperfmperf_snapshot_khz(void *dummy)
 	nk_vc_printf("aperf_delta has: %016x\n", aperf_delta);
 	nk_vc_printf("mperf_delta has: %016x\n", mperf_delta);
 	*/
+	
 	/*
 	 * There is no architectural guarantee that MPERF
 	 * increments faster than we can read it.
@@ -182,11 +186,12 @@ uint64_t aperfmperf_snapshot_khz(void *dummy)
 	nk_vc_printf("cpu_khz is: %016x\n", cur_khz);
 	*/
 
-	s->time = 0; // Need nautilus version
+	s->time = rdtsc(); // Need nautilus version
 	s->aperf = aperf;
 	s->mperf = mperf;
 	s->khz = (pstate_data.cpu_base_khz * aperf_delta) / mperf_delta;
-	//nk_vc_printf("The current running frequency is: %d KHz\n", s->khz);
+	if(print_flag)
+		{nk_vc_printf("The current running frequency is: %d KHz\n", s->khz);}
 	return s->khz;
 }
 
@@ -200,21 +205,83 @@ static inline void set_turbo(int enable)
 	msr_write(IA32_PERF_CTL, perf_ctl.val);
 }
 
-static uint_t hash_from_key_fn( addr_t key ) {
-	return key % TABLE_SIZE;
+
+
+
+static int set_pstate(uint16_t pstate) {
+	DEBUG("I call set_pstate().\n");
+	nk_vc_printf("I call set_pstate().\n");
+	struct ia32_perf_ctl perf_ctl;	
+	/*
+	if (my_cpu.pstate.current_pstate == pstate) 
+		return 0;
+	if(pstate < my_cpu.min_pstate) 
+		return 1;
+	if(pstate > my_cpu.max_pstate) 
+		return 1;
+	*/
+	perf_ctl.val = msr_read(IA32_PERF_CTL);
+	if(print_flag)
+		{nk_vc_printf("I read %016x\n", perf_ctl.val);}
+	perf_ctl.reg.pstate = pstate;
+	pstate_data.current_pstate = pstate;
+	if(print_flag)
+		{nk_vc_printf("I write %016x\n", perf_ctl.val);}
+	msr_write(IA32_PERF_CTL, perf_ctl.val);
+
+	// MAKE SURE MSR has been written to.
+	if(print_flag)
+		{nk_vc_printf("Done! As a result, we've written %016x\n", msr_read(IA32_PERF_CTL));}
+	return 0;
 }
 
-static int keys_equal_fn ( addr_t key1, addr_t key2 ) {
+// Get Pstate
+static uint16_t get_pstate(void)
+{
+	struct perf_stat_reg_intel perf;
+    perf.val = msr_read(MSR_PERF_STAT_IA32);
+	nk_vc_printf("P-State: Get: %08x\n", perf.val);
 
-	uint64_t h1, h2;
+    // should check if turbo is active, in which case 
+    // this value is not the whole story
+	// Maybe deal with it at the end
 
-	h1 = hash_from_key_fn(key1);
-	h2 = hash_from_key_fn(key2);
-
-	return h1 == h2;
-
+    return perf.reg.pstate;
 }
 
+
+static inline void cpuid_string (uint32_t id, uint32_t dest[4]) 
+{
+    asm volatile("cpuid"
+            :"=a"(*dest),"=b"(*(dest+1)),"=c"(*(dest+2)),"=d"(*(dest+3))
+            :"a"(id));
+}
+
+static int is_intel (void)
+{
+    char name[13];
+    get_cpu_vendor(name);
+    return !strcmp(name,"GenuineIntel");
+}
+
+
+static int get_cpu_vendor (char name[13])
+{
+    uint32_t dest[4];
+    uint32_t maxid;
+
+    cpuid_string(0,dest);
+    maxid=dest[0];
+    ((uint32_t*)name)[0]=dest[1];
+    ((uint32_t*)name)[1]=dest[3];
+    ((uint32_t*)name)[2]=dest[2];
+    name[12]=0;
+
+    return maxid;
+}
+
+/* BOGOMIPS HASH TABLE STUFF */ 
+#if TABLE_IMPL == 1
 
 static void freq_table_init(cpufreq_frequency_table *freq_table) {
 
@@ -262,7 +329,7 @@ static void freq_table_init(cpufreq_frequency_table *freq_table) {
 	irq_enable_restore(flags);	
 }
 
-void set_freq(uint64_t freq) {
+void nk_set_freq(uint64_t freq) {
 	
 	nk_vc_printf("i want to set the freq to %f\n", freq);
 	double ratio = freq / pstate_data.cpu_base_khz;
@@ -285,15 +352,26 @@ void set_freq(uint64_t freq) {
 	set_pstate(p_state);
 }
 
-#define FREQ_TOLERANCE 50
-typedef struct 
-{
-	uint16_t pstate;
-	uint64_t frequency;
-} table_entry;
-table_entry table[TABLE_SIZE];
+static uint_t hash_from_key_fn( addr_t key ) {
+	return key % TABLE_SIZE;
+}
 
-static void freq_table_init2 (void)
+static int keys_equal_fn ( addr_t key1, addr_t key2 ) {
+
+	uint64_t h1, h2;
+
+	h1 = hash_from_key_fn(key1);
+	h2 = hash_from_key_fn(key2);
+
+	return h1 == h2;
+
+}
+
+#else
+/* ARRAY IMPL STUFF */
+
+
+static void freq_table_init(void)
 {
 	struct aperfmperf_sample *s = per_cpu_get(sample);
 	int i;
@@ -314,8 +392,7 @@ static void freq_table_init2 (void)
 	irq_enable_restore(flags);	
 
 }
-
-void set_freq2(uint64_t freq) {
+void nk_set_freq(uint64_t freq) {
 
 	uint8_t flags = irq_disable_save();	
 	int i;
@@ -338,77 +415,11 @@ void set_freq2(uint64_t freq) {
 
 }
 
-
-static int set_pstate(uint16_t pstate) {
-	//DEBUG("I call set_pstate().\n");
-	//nk_vc_printf("I call set_pstate().\n");
-	struct ia32_perf_ctl perf_ctl;	
-	/*
-	if (my_cpu.pstate.current_pstate == pstate)
-		return 0;
-	if(pstate < my_cpu.min_pstate) 
-		return 1;
-	if(pstate > my_cpu.max_pstate) 
-		return 1;
-	*/
-	perf_ctl.val = msr_read(IA32_PERF_CTL);
-	//nk_vc_printf("I read %016x\n", perf_ctl.val);
-	perf_ctl.reg.pstate = pstate;
-	pstate_data.current_pstate = pstate;
-	//nk_vc_printf("I write %016x\n", perf_ctl.val);
-	msr_write(IA32_PERF_CTL, perf_ctl.val);
-
-	// MAKE SURE MSR has been written to.
-	//nk_vc_printf("Done! As a result, we've written %016x\n", msr_read(IA32_PERF_CTL));
-	return 0;
-}
-
-// Get Pstate
-static uint16_t get_pstate_intel(void)
-{
-	struct perf_stat_reg_intel perf;
-    perf.val = msr_read(MSR_PERF_STAT_IA32);
-	nk_vc_printf("P-State: Get: %08x\n", perf.val);
-
-    // should check if turbo is active, in which case 
-    // this value is not the whole story
-	// Maybe deal with it at the end
-
-    return perf.reg.pstate;
-}
+#endif
 
 
-static inline void cpuid_string (uint32_t id, uint32_t dest[4]) 
-{
-    asm volatile("cpuid"
-            :"=a"(*dest),"=b"(*(dest+1)),"=c"(*(dest+2)),"=d"(*(dest+3))
-            :"a"(id));
-}
 
-static int is_intel (void)
-{
-    char name[13];
-    get_cpu_vendor(name);
-    return !strcmp(name,"GenuineIntel");
-}
-
-
-static int get_cpu_vendor (char name[13])
-{
-    uint32_t dest[4];
-    uint32_t maxid;
-
-    cpuid_string(0,dest);
-    maxid=dest[0];
-    ((uint32_t*)name)[0]=dest[1];
-    ((uint32_t*)name)[1]=dest[3];
-    ((uint32_t*)name)[2]=dest[2];
-    name[12]=0;
-
-    return maxid;
-}
-
-uint64_t dvfs_init(void) {
+uint64_t nk_dvfs_init(void) {
 	// declarations 
 	cpuid_ret_t regs;
 	int supports_aperfmperf, supports_speedstep, supports_hw_cord, supports_hwp;
@@ -510,11 +521,28 @@ uint64_t dvfs_init(void) {
 	nk_vc_printf("new temp is %08x\n", temp);
     msr_write(MSR_MISC_ENABLE_IA32, temp);
 
-	//freq_table_init(pstate_data.freq_table);
-	//nk_vc_printf("Successfully initialized freq_table\n");
-
+#if TABLE_IMPL == 1
+	freq_table_init(pstate_data.freq_table);
+#else
+	freq_table_init();
+	nk_vc_printf("Successfully initialized freq_table\n");
+	print_flag = 1;
 	return supports_acpi;
 }
+
+uint64_t nk_dvfs_deinit(void) {
+	uint64_t status = 0;
+
+#if TABLE_IMPL == 1
+	status = free(freq_table);
+#endif
+	return status;
+
+}
+
+
+/* Shell Commands for testing */
+/* ======================================================== */
 
 static int handle_get_pstate(char * buf, void * priv)
 {
@@ -619,3 +647,5 @@ nk_register_shell_cmd(get_pstate_impl);
 nk_register_shell_cmd(set_pstate_impl);
 nk_register_shell_cmd(handle_dvfs_impl);
 nk_register_shell_cmd(handle_freq_table_init_impl);
+
+/* ======================================================== */
