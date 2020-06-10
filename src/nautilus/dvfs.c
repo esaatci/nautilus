@@ -386,7 +386,7 @@ static void freq_table_init(void)
 		set_pstate(i);
 
 		// Stall
-		nk_simple_timing_loop(LOOP_ITER / 10000);
+		nk_simple_timing_loop(LOOP_ITER / 100);
 
 		// Store pstate/freq pair into the table
 		table[i].pstate = i;
@@ -417,7 +417,7 @@ void nk_set_freq(uint64_t freq) {
 	}
 	set_pstate(saved_pstate);
 	nk_vc_printf("We decided to set the pstate to %016x\n", saved_pstate);
-	//nk_vc_printf("The closest frequency we found in the table was %d\n", (double)table[saved_i].frequency);
+	nk_vc_printf("The closest frequency we found in the table was %d\n", table[saved_i].frequency);
 	irq_enable_restore(flags);	
 
 }
