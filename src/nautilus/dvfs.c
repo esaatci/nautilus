@@ -7,6 +7,7 @@
 #include <nautilus/irq.h>
 #include <nautilus/hashtable.h>
 #include <nautilus/libccompat.h>
+#include <float.h>
 
 #define MSR_MPERF_IA32         	0x000000e7
 #define MSR_APERF_IA32         	0x000000e8
@@ -386,7 +387,7 @@ static void freq_table_init(void)
 		set_pstate(i);
 
 		// Stall
-		nk_simple_timing_loop(LOOP_ITER / 100);
+		nk_simple_timing_loop(LOOP_ITER / 100); // 10000
 
 		// Store pstate/freq pair into the table
 		table[i].pstate = i;
@@ -401,7 +402,9 @@ void nk_set_freq(uint64_t freq) {
 
 	uint8_t flags = irq_disable_save();	
 	int i, saved_i = 0;
-	double difference = (1 << 16);
+
+	// Serves purpose as infinity
+	double difference = DBL_MAX;
 	uint16_t saved_pstate = 0;
 
 	for(i=0; i < (1 << 16); i++)
@@ -412,7 +415,7 @@ void nk_set_freq(uint64_t freq) {
 		{
 			difference = abs((double)table[i].frequency - (double)freq);
 			saved_pstate = table[i].pstate;
-			saved_i = i;
+			saved_i = i; 
 		}
 	}
 	set_pstate(saved_pstate);
