@@ -47,14 +47,12 @@ static int keys_equal_fn ( addr_t key1, addr_t key2 );
 typedef struct nk_hashtable cpufreq_frequency_table;
 
 #else
-
 typedef struct 
 {
 	uint16_t pstate;
 	uint64_t frequency;
 } table_entry;
 table_entry table[TABLE_SIZE];
-
 static void freq_table_init(void);
 
 #endif
@@ -154,7 +152,11 @@ uint64_t aperfmperf_snapshot_khz(void *dummy)
 {
 	uint64_t aperf, aperf_delta;
 	uint64_t mperf, mperf_delta;
+	//struct aperfmperf_sample *s = this_cpu_ptr(&samples);
+	//nk_vc_printf("I'm getting the per cpu sample\n");
 	struct aperfmperf_sample *s = per_cpu_get(sample);
+	//unsigned long flags;
+	//nk_vc_printf("Disabled interrupts\n");
 
 	uint8_t flags = irq_disable_save();
 	mperf = msr_read(MSR_MPERF_IA32);
@@ -164,16 +166,33 @@ uint64_t aperfmperf_snapshot_khz(void *dummy)
 	//nk_vc_printf("Enabled interrupts\n");
 	aperf_delta = aperf - s->aperf;
 	mperf_delta = mperf - s->mperf;
-
+	/*nk_vc_printf("aperf has: %016x\n", aperf);
+	nk_vc_printf("mperf has: %016x\n", mperf);
+	nk_vc_printf("aperf_delta has: %016x\n", aperf_delta);
+	nk_vc_printf("mperf_delta has: %016x\n", mperf_delta);
+	*/
+	
+	/*
+	 * There is no architectural guarantee that MPERF
+	 * increments faster than we can read it.
+	 */
 	if (mperf_delta == 0)
 	{
 		return 0;
 	}
 
+	/*
+	nk_vc_printf("getting cpu_khz\n");
+	ulong_t cur_khz = per_cpu_get(cpu_khz);
+	nk_vc_printf("cpu_khz is: %016x\n", cur_khz);
+	*/
+
 	s->time = rdtsc(); // Need nautilus version
 	s->aperf = aperf;
 	s->mperf = mperf;
 	s->khz = (pstate_data.cpu_base_khz * aperf_delta) / mperf_delta;
+	if(print_flag)
+		{nk_vc_printf("The current running frequency is: %d KHz\n", s->khz);}
 	return s->khz;
 }
 
@@ -195,6 +214,14 @@ static int set_pstate(uint16_t pstate) {
 	if(print_flag)
 		{nk_vc_printf("I call set_pstate().\n");}
 	struct ia32_perf_ctl perf_ctl;	
+	/*
+	if (my_cpu.pstate.current_pstate == pstate) 
+		return 0;
+	if(pstate < my_cpu.min_pstate) 
+		return 1;
+	if(pstate > my_cpu.max_pstate) 
+		return 1;
+	*/
 	perf_ctl.val = msr_read(IA32_PERF_CTL);
 	if(print_flag)
 		{nk_vc_printf("I read %016x\n", perf_ctl.val);}
@@ -216,6 +243,11 @@ static uint16_t get_pstate(void)
 	struct perf_stat_reg_intel perf;
     perf.val = msr_read(MSR_PERF_STAT_IA32);
 	nk_vc_printf("P-State: Get: %08x\n", perf.val);
+
+    // should check if turbo is active, in which case 
+    // this value is not the whole story
+	// Maybe deal with it at the end
+
     return perf.reg.pstate;
 }
 
@@ -345,18 +377,24 @@ static void freq_table_init(void)
 {
 	struct aperfmperf_sample *s = per_cpu_get(sample);
 	int i;
+
 	nk_vc_printf("Calling freq_table_init.\n");
+
 	uint8_t flags = irq_disable_save();	
 	for(i=0; i < (1 << 16); i++)
 	{
+		// Set pstate
 		set_pstate(i);
 
 		// Stall
 		nk_simple_timing_loop(LOOP_ITER / 100); // 10000
+
+		// Store pstate/freq pair into the table
 		table[i].pstate = i;
 		table[i].frequency = aperfmperf_snapshot_khz(NULL);
 	}
 	irq_enable_restore(flags);	
+
 	nk_vc_printf("We are done calling freq_table_init. Return!\n");
 }
 
@@ -365,12 +403,15 @@ void nk_set_freq(uint64_t freq) {
 	uint8_t flags = irq_disable_save();	
 	int i, saved_i = 0;
 
+	// Serves purpose as infinity
 	double difference = DBL_MAX;
 	uint16_t saved_pstate = 0;
 
 	for(i=0; i < (1 << 16); i++)
 	{
-		if (abs((double)table[i].frequency-(double)freq)<(double)difference)
+		// Store pstate/freq pair into the table
+		//if ( table[i].frequency + FREQ_TOLERANCE > freq && table[i].frequency - FREQ_TOLERANCE < freq)
+		if (abs((double)table[i].frequency - (double)freq) < (double)difference)
 		{
 			difference = abs((double)table[i].frequency - (double)freq);
 			saved_pstate = table[i].pstate;
@@ -381,6 +422,7 @@ void nk_set_freq(uint64_t freq) {
 	nk_vc_printf("We decided to set the pstate to %016x\n", saved_pstate);
 	nk_vc_printf("The closest frequency we found in the table was %d\n", table[saved_i].frequency);
 	irq_enable_restore(flags);	
+
 }
 
 #endif
